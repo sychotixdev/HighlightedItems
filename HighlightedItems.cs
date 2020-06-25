@@ -1,6 +1,5 @@
 ﻿using System.Windows.Forms;
 using HighlightedItems.Utils;
-using System.Threading;
 using ExileCore;
 using ExileCore.PoEMemory.Elements.InventoryElements;
 using ExileCore.PoEMemory.MemoryObjects;
@@ -12,7 +11,6 @@ using ExileCore.Shared.Enums;
 using ImGuiNET;
 using System.Numerics;
 using System;
-using ExileCore.Shared.Nodes;
 
 namespace HighlightedItems
 {
@@ -53,7 +51,7 @@ namespace HighlightedItems
             if (stashPanel.IsVisible)
             {
                 var visibleStash = stashPanel.VisibleStash;
-                if (visibleStash == null)
+                if (visibleStash == null || visibleStash.InventoryUIElement == null)
                     return;
 
                 //Determine Stash Pickup Button position and draw
@@ -122,25 +120,34 @@ namespace HighlightedItems
         public List<NormalInventoryItem> GetHighlightedItems()
         {
             List<NormalInventoryItem> highlightedItems = new List<NormalInventoryItem>();
-            try
+
+            if (ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems != null)
             {
-                IList<NormalInventoryItem> inventoryItems = ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems;
-
-                IEnumerable<NormalInventoryItem> orderedInventoryItems = inventoryItems
-                    .Cast<NormalInventoryItem>()
-                    .OrderBy(inventoryItem => inventoryItem.InventPosX)
-                    .ThenBy(inventoryItem => inventoryItem.InventPosY);
-
-                foreach (var item in orderedInventoryItems)
+                try
                 {
-                    bool isHighlighted = item.isHighlighted;
-                    if (isHighlighted)
+                    IList<NormalInventoryItem> inventoryItems = ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems;
+
+                    IEnumerable<NormalInventoryItem> orderedInventoryItems = inventoryItems
+                        .Cast<NormalInventoryItem>()
+                        .OrderBy(inventoryItem => inventoryItem.InventPosX)
+                        .ThenBy(inventoryItem => inventoryItem.InventPosY);
+
+                    foreach (var item in orderedInventoryItems)
                     {
-                        highlightedItems.Add(item);
+                        bool isHighlighted = item.isHighlighted;
+                        if (isHighlighted)
+                        {
+                            highlightedItems.Add(item);
+                        }
                     }
+
+                }
+                catch (Exception e)
+                {
+                    LogError($"{Name}: {e.Message}");
                 }
             }
-            catch (System.Exception) { }
+
             return highlightedItems;
         }
 
