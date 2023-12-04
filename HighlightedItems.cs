@@ -15,12 +15,14 @@ using System.Threading;
 using ExileCore.PoEMemory.Components;
 using ExileCore.Shared;
 using ExileCore.Shared.Helpers;
+using InputHumanizer.Input;
 
 namespace HighlightedItems;
 
 public class HighlightedItems : BaseSettingsPlugin<Settings>
 {
     private SyncTask<bool> _currentOperation;
+    private IInputController _inputController;
 
     private bool MoveCancellationRequested => Settings.CancelWithRightMouseButton && (Control.MouseButtons & MouseButtons.Right) != 0;
     private IngameState InGameState => GameController.IngameState;
@@ -183,34 +185,47 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             return false;
         }
 
-        var prevMousePos = Mouse.GetCursorPosition();
-        foreach (var item in items)
+        // Now that we're all validated up, grab an input lock so we can get going
+        var tryGetInputController = GameController.PluginBridge.GetMethod<Func<string, IInputController>>("InputHumanizer.TryGetInputController");
+        if (tryGetInputController == null)
         {
-            if (MoveCancellationRequested)
-            {
-                return false;
-            }
-
-            if (!CheckIgnoreCells(item))
-            {
-                if (!InGameState.IngameUi.InventoryPanel.IsVisible)
-                {
-                    DebugWindow.LogMsg("HighlightedItems: Inventory Panel closed, aborting loop");
-                    break;
-                }
-
-                if (!IsStashTargetOpened)
-                {
-                    DebugWindow.LogMsg("HighlightedItems: Target inventory closed, aborting loop");
-                    break;
-                }
-
-                await MoveItem(item.GetClientRect().Center);
-            }
+            LogError("InputHumanizer method not registered.");
+            return false;
         }
 
-        Mouse.moveMouse(prevMousePos);
-        await Wait(MouseMoveDelay, true);
+        if ((_inputController = tryGetInputController(this.Name)) != null)
+        {
+            using (_inputController)
+            {
+                var prevMousePos = Mouse.GetCursorPosition();
+                foreach (var item in items)
+                {
+                    if (MoveCancellationRequested)
+                    {
+                        return false;
+                    }
+
+                    if (!CheckIgnoreCells(item))
+                    {
+                        if (!InGameState.IngameUi.InventoryPanel.IsVisible)
+                        {
+                            DebugWindow.LogMsg("HighlightedItems: Inventory Panel closed, aborting loop");
+                            break;
+                        }
+
+                        if (!IsStashTargetOpened)
+                        {
+                            DebugWindow.LogMsg("HighlightedItems: Target inventory closed, aborting loop");
+                            break;
+                        }
+
+                        await MoveItem(item.GetClientRect().Center);
+                    }
+                }
+
+                await _inputController.MoveMouse(prevMousePos.ToVector2());
+            }
+        }
         return true;
     }
 
@@ -234,37 +249,50 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
             return false;
         }
 
-        var prevMousePos = Mouse.GetCursorPosition();
-        foreach (var item in items)
+        // Now that we're all validated up, grab an input lock so we can get going
+        var tryGetInputController = GameController.PluginBridge.GetMethod<Func<string, IInputController>>("InputHumanizer.TryGetInputController");
+        if (tryGetInputController == null)
         {
-            if (MoveCancellationRequested)
-            {
-                return false;
-            }
-
-            if (!IsStashSourceOpened)
-            {
-                DebugWindow.LogMsg("HighlightedItems: Stash Panel closed, aborting loop");
-                break;
-            }
-
-            if (!InGameState.IngameUi.InventoryPanel.IsVisible)
-            {
-                DebugWindow.LogMsg("HighlightedItems: Inventory Panel closed, aborting loop");
-                break;
-            }
-
-            if (IsInventoryFull())
-            {
-                DebugWindow.LogMsg("HighlightedItems: Inventory full, aborting loop");
-                break;
-            }
-
-            await MoveItem(item.GetClientRect().Center);
+            LogError("InputHumanizer method not registered.");
+            return false;
         }
 
-        Mouse.moveMouse(prevMousePos);
-        await Wait(MouseMoveDelay, true);
+        if ((_inputController = tryGetInputController(this.Name)) != null)
+        {
+            using (_inputController)
+            {
+                var prevMousePos = Mouse.GetCursorPosition();
+                foreach (var item in items)
+                {
+                    if (MoveCancellationRequested)
+                    {
+                        return false;
+                    }
+
+                    if (!IsStashSourceOpened)
+                    {
+                        DebugWindow.LogMsg("HighlightedItems: Stash Panel closed, aborting loop");
+                        break;
+                    }
+
+                    if (!InGameState.IngameUi.InventoryPanel.IsVisible)
+                    {
+                        DebugWindow.LogMsg("HighlightedItems: Inventory Panel closed, aborting loop");
+                        break;
+                    }
+
+                    if (IsInventoryFull())
+                    {
+                        DebugWindow.LogMsg("HighlightedItems: Inventory full, aborting loop");
+                        break;
+                    }
+
+                    await MoveItem(item.GetClientRect().Center);
+                }
+
+                await _inputController.MoveMouse(prevMousePos.ToVector2());
+            }
+        }
         return true;
     }
 
@@ -332,24 +360,12 @@ public class HighlightedItems : BaseSettingsPlugin<Settings>
         return true;
     }
 
-    private static readonly TimeSpan KeyDelay = TimeSpan.FromMilliseconds(10);
-    private static readonly TimeSpan MouseMoveDelay = TimeSpan.FromMilliseconds(20);
-    private TimeSpan MouseDownDelay => TimeSpan.FromMilliseconds(5 + Settings.ExtraDelay.Value);
-    private static readonly TimeSpan MouseUpDelay = TimeSpan.FromMilliseconds(5);
-
     private async SyncTask<bool> MoveItem(SharpDX.Vector2 itemPosition)
     {
         itemPosition += WindowOffset;
-        Keyboard.KeyDown(Keys.LControlKey);
-        await Wait(KeyDelay, true);
-        Mouse.moveMouse(itemPosition);
-        await Wait(MouseMoveDelay, true);
-        Mouse.LeftDown();
-        await Wait(MouseDownDelay, true);
-        Mouse.LeftUp();
-        await Wait(MouseUpDelay, true);
-        Keyboard.KeyUp(Keys.LControlKey);
-        await Wait(KeyDelay, false);
+        await _inputController.KeyDown(Keys.LControlKey);
+        await _inputController.Click(MouseButtons.Left, itemPosition.ToVector2Num());
+        await _inputController.KeyUp(Keys.LControlKey);
         return true;
     }
 
